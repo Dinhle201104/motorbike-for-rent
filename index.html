@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Motorbike For Rent - Quản Lý & Báo Cáo Doanh Thu</title>
+  <meta name="description"
+    content="Hệ thống quản lý và lịch cho thuê xe máy Motorbike For Rent - Quản lý đơn thuê, xem lịch bận/trống, thống kê doanh thu và nguồn khách hàng.">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet">
+
+  <!-- FontAwesome Icons CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+
+  <div id="app-container">
+
+    <!-- MOBILE SIDEBAR BACKDROP OVERLAY -->
+    <div id="sidebar-backdrop" onclick="window.MocCarApp.closeMobileSidebar()"
+      style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); z-index:19;">
+    </div>
+
+    <!-- SIDEBAR NAVIGATION -->
+    <aside class="sidebar">
+      <div>
+        <div class="brand">
+          <div class="brand-icon">
+            <i class="fas fa-motorcycle"></i>
+          </div>
+          <div>
+            <h1 class="brand-title">MOTORBIKE FOR RENT</h1>
+            <div class="brand-subtitle">Cho Thuê Xe Máy</div>
+          </div>
+        </div>
+
+        <ul class="nav-menu">
+          <li class="nav-item active">
+            <button data-tab="calendar">
+              <i class="fas fa-calendar-alt"></i>
+              <span>Lịch Cho Thuê</span>
+            </button>
+          </li>
+          <li class="nav-item">
+            <button data-tab="bookings">
+              <i class="fas fa-file-invoice-dollar"></i>
+              <span>Quản Lý Đơn Thuê</span>
+            </button>
+          </li>
+          <li class="nav-item">
+            <button data-tab="dashboard">
+              <i class="fas fa-chart-line"></i>
+              <span>Báo Cáo Doanh Thu</span>
+            </button>
+          </li>
+          <li class="nav-item">
+            <button data-tab="fleet">
+              <i class="fas fa-motorcycle"></i>
+              <span>Quản Lý Đội Xe</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="quick-stats-mini" style="margin-bottom: 0.75rem;">
+          <div class="mini-stat-label"><i class="fas fa-coins" style="color:var(--primary);"></i> Cộng dồn thực thu:
+          </div>
+          <div class="mini-stat-val" id="mini-stat-revenue" style="color:var(--primary);">0 ₫</div>
+        </div>
+
+        <button class="btn btn-primary btn-sm" style="width: 100%; margin-bottom: 0.5rem; justify-content: center;"
+          onclick="window.MocCarApp.openSyncModal()">
+          <i class="fas fa-cloud"></i> Quản Lý Đồng Bộ
+        </button>
+
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-outline btn-sm" style="flex:1; justify-content: center;"
+            onclick="window.MocCarApp.exportDataBackup()" title="Tải xuống tệp sao lưu JSON">
+            <i class="fas fa-download"></i> Sao Lưu
+          </button>
+          <button class="btn btn-outline btn-sm" style="flex:1; justify-content: center;"
+            onclick="window.MocCarApp.triggerImportData()" title="Khôi phục từ tệp JSON">
+            <i class="fas fa-upload"></i> Khôi Phục
+          </button>
+          <input type="file" id="import-json-file" accept=".json" style="display: none;"
+            onchange="window.MocCarApp.handleImportFile(event)">
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="main-content">
+
+      <!-- TOP HEADER -->
+      <header class="top-header">
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <button class="btn btn-secondary btn-icon-only" id="mobile-menu-toggle"
+            onclick="window.MocCarApp.toggleMobileSidebar()">
+            <i class="fas fa-bars"></i>
+          </button>
+          <div class="page-heading">
+            <div class="page-title" id="current-page-title">Lịch Cho Thuê Xe Máy</div>
+          </div>
+        </div>
+
+        <div class="header-actions" style="display: flex; align-items: center; gap: 0.75rem;">
+          <div id="sync-status-badge" class="sync-badge sync-offline" onclick="window.MocCarApp.openSyncModal()"
+            title="Bấm để quản lý đồng bộ dữ liệu">
+            <i id="sync-badge-icon" class="fas fa-cloud"></i>
+            <span id="sync-badge-text">Chưa đặt Mã Sync</span>
+          </div>
+          <button class="btn btn-outline" onclick="window.MocCarApp.openSyncModal()" title="Đồng Bộ Đám Mây & Thiết Bị">
+            <i class="fas fa-sync-alt"></i> Đồng Bộ
+          </button>
+          <button class="btn btn-primary" onclick="window.MocCarBooking.openModal()">
+            <i class="fas fa-plus"></i> Tạo Đơn Thuê Nhanh
+          </button>
+        </div>
+      </header>
+
+      <!-- VIEW 1: CALENDAR VIEW (MONTH GRID & TIMELINE MATRIX) -->
+      <section class="view-section active" id="view-calendar">
+
+        <div class="calendar-controls">
+          <div class="calendar-nav">
+            <button class="btn btn-secondary btn-sm" id="cal-prev-month" title="Tháng trước">
+              <i class="fas fa-chevron-left"></i>
+            </button>
+            <div class="month-display" id="cal-month-display">Tháng 8 / 2026</div>
+            <button class="btn btn-secondary btn-sm" id="cal-next-month" title="Tháng sau">
+              <i class="fas fa-chevron-right"></i>
+            </button>
+            <button class="btn btn-outline btn-sm" id="cal-today">Hôm Nay</button>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <div class="view-toggle-group">
+              <button class="view-toggle-btn active" id="btn-view-grid">
+                <i class="fas fa-th"></i> Lịch Lưới Tháng
+              </button>
+              <button class="view-toggle-btn" id="btn-view-matrix">
+                <i class="fas fa-stream"></i> Matrix Đội Xe Máy
+              </button>
+            </div>
+
+            <div class="calendar-legend">
+              <div class="legend-item"><span class="legend-dot booked"></span> Đã Đặt</div>
+              <div class="legend-item"><span class="legend-dot active"></span> Đang Thuê</div>
+              <div class="legend-item"><span class="legend-dot done"></span> Đã Trả (Cộng Dồn)</div>
+              <div class="legend-item"><span class="legend-dot available"></span> Lịch Trống</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Month Grid View -->
+        <div id="calendar-grid-wrapper">
+          <div class="calendar-month-grid" id="calendar-month-grid">
+            <!-- Dynamic calendar day cells rendered via js/calendar.js -->
+          </div>
+        </div>
+
+        <!-- Matrix Timeline View (Hidden by default) -->
+        <div id="calendar-matrix-wrapper" class="timeline-matrix-container" style="display: none;">
+          <!-- Dynamic timeline table rendered via js/calendar.js -->
+        </div>
+
+      </section>
+
+
+      <!-- VIEW 2: BOOKINGS LIST VIEW -->
+      <section class="view-section" id="view-bookings">
+
+        <div class="filter-bar">
+          <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" id="filter-search" placeholder="Tìm theo tên khách, SĐT, CCCD, tên xe, BKS...">
+          </div>
+
+          <div class="filter-group">
+            <select class="select-custom" id="filter-car">
+              <option value="">-- Tất cả các xe --</option>
+            </select>
+
+            <select class="select-custom" id="filter-status">
+              <option value="">-- Tất cả trạng thái --</option>
+              <option value="Đã Đặt">Đã Đặt</option>
+              <option value="Đang Thuê">Đang Thuê</option>
+              <option value="Đã Trả">Đã Trả (Hoàn thành)</option>
+              <option value="Đã Hủy">Đã Hủy</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="data-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Khách Hàng (CCCD / GPLX)</th>
+                <th>Xe Máy Cho Thuê</th>
+                <th>Thời Gian Nhận - Trả</th>
+                <th>Giá Thuê Xe</th>
+                <th>Tiền Cọc & Hoàn Cọc</th>
+                <th>Trạng Thái & Nguồn</th>
+                <th>Thao Tác</th>
+              </tr>
+            </thead>
+            <tbody id="booking-table-tbody">
+              <!-- Rendered via js/booking.js -->
+            </tbody>
+          </table>
+        </div>
+
+      </section>
+
+
+      <!-- VIEW 3: REVENUE DASHBOARD & REPORTS -->
+      <section class="view-section" id="view-dashboard">
+
+        <!-- KPI Cards Grid -->
+        <div class="kpi-grid">
+          <!-- CARD CHÍNH: TỔNG SỐ TIỀN ĐÃ NHẬN ĐƯỢC TỪ CHO THUÊ XE -->
+          <div class="kpi-card"
+            style="border: 2px solid var(--primary); background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(30, 41, 59, 0.85));">
+            <div class="kpi-icon emerald" style="width: 58px; height: 58px; font-size: 1.6rem;"><i
+                class="fas fa-hand-holding-usd"></i></div>
+            <div class="kpi-info">
+              <span class="kpi-title" style="color: var(--primary); font-weight: 800;">TỔNG SỐ TIỀN ĐÃ NHẬN ĐƯỢC TỪ CHO
+                THUÊ XE MÁY</span>
+              <span class="kpi-value" id="kpi-total-cash-received" style="color: #34d399; font-size: 1.65rem;">0
+                ₫</span>
+              <span class="kpi-subtext" style="color: #a7f3d0;">Tổng tiền thực tế đã thu (Tiền thuê đã trả + Cọc đang
+                giữ)</span>
+            </div>
+          </div>
+
+          <!-- CARD 2: TỔNG DOANH THU TOÀN BỘ LỊCH SỬ THUÊ XE -->
+          <div class="kpi-card"
+            style="border: 2px solid var(--accent-gold); background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(30, 41, 59, 0.8));">
+            <div class="kpi-icon gold" style="width: 58px; height: 58px; font-size: 1.6rem;"><i
+                class="fas fa-crown"></i></div>
+            <div class="kpi-info">
+              <span class="kpi-title" style="color: var(--accent-gold); font-weight: 800;">TỔNG DOANH THU TOÀN BỘ LỊCH
+                SỬ THUÊ XE MÁY</span>
+              <span class="kpi-value" id="kpi-total-lifetime-revenue" style="color: #fbbf24; font-size: 1.65rem;">0
+                ₫</span>
+              <span class="kpi-subtext" style="color: #fef3c7;">Tổng tất cả doanh thu đã trả xe + Giá trị đơn
+                active</span>
+            </div>
+          </div>
+
+          <!-- CARD 3: DOANH THU CỘNG DỒN THỰC THU -->
+          <div class="kpi-card" style="border-left: 4px solid var(--primary);">
+            <div class="kpi-icon emerald"><i class="fas fa-wallet"></i></div>
+            <div class="kpi-info">
+              <span class="kpi-title">DOANH THU CỘNG DỒN THỰC THU (Đã Trả Xe)</span>
+              <span class="kpi-value" id="kpi-realized-revenue" style="color: var(--primary);">0 ₫</span>
+              <span class="kpi-subtext" id="kpi-completed-count">Đã hoàn thành 0 lượt trả xe</span>
+            </div>
+          </div>
+
+          <!-- CARD 4: DOANH THU DỰ KIẾN -->
+          <div class="kpi-card">
+            <div class="kpi-icon blue"><i class="fas fa-chart-line"></i></div>
+            <div class="kpi-info">
+              <span class="kpi-title">Doanh Thu Dự Kiến (Đang Thuê / Đã Đặt)</span>
+              <span class="kpi-value" id="kpi-pending-revenue" style="color: var(--accent-blue);">0 ₫</span>
+              <span class="kpi-subtext">Đơn đang cho thuê và chờ nhận xe</span>
+            </div>
+          </div>
+
+          <!-- CARD 5: CỌC ĐÃ HOÀN TRẢ KHÁCH -->
+          <div class="kpi-card">
+            <div class="kpi-icon gold"><i class="fas fa-undo"></i></div>
+            <div class="kpi-info">
+              <span class="kpi-title">Tổng Tiền Cọc Đã Hoàn Trả Khách</span>
+              <span class="kpi-value" id="kpi-total-refunded" style="color: var(--accent-gold);">0 ₫</span>
+              <span class="kpi-subtext" id="kpi-total-deductions">Trừ cọc/phụ thu: 0 ₫</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Monthly Revenue Comparison Bar Chart -->
+        <div class="glass-card chart-card" style="margin-bottom: 1.5rem; min-height: 380px;">
+          <div class="chart-header">
+            <div class="chart-title">
+              <i class="fas fa-chart-bar" style="color: var(--primary);"></i> Biểu Đồ Cột So Sánh Tổng Doanh Thu Qua Các
+              Tháng (Tháng 1 ➔ Tháng 12)
+            </div>
+          </div>
+          <div class="chart-body">
+            <canvas id="chart-monthly-revenue"></canvas>
+          </div>
+        </div>
+
+        <!-- Return Transaction History Ledger Table -->
+        <div class="glass-card" style="margin-bottom: 1.5rem;">
+          <div class="chart-header">
+            <div class="chart-title">
+              <i class="fas fa-receipt" style="color: var(--primary);"></i> Sổ Nhật Ký Giao Dịch Trả Xe & Cộng Dồn Doanh
+              Thu
+            </div>
+          </div>
+          <div class="data-table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Thời Gian Trả Xe</th>
+                  <th>Khách Hàng & SĐT</th>
+                  <th>Xe Thuê & BKS</th>
+                  <th>TIỀN CHO THUÊ XE (Giá Thuê)</th>
+                  <th>Cọc Hoàn Trả Khách</th>
+                  <th>Phụ Thu / Trừ Cọc</th>
+                  <th style="text-align: right;">CỘNG DỒN THỰC THU TỔNG</th>
+                </tr>
+              </thead>
+              <tbody id="table-return-history-tbody">
+                <!-- Rendered via js/reports.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="charts-grid">
+
+          <!-- Left Chart: Vehicle Performance -->
+          <div class="glass-card chart-card">
+            <div class="chart-header">
+              <div class="chart-title">
+                <i class="fas fa-motorcycle" style="color: var(--primary);"></i> Doanh Thu Cộng Dồn Theo Xe Máy
+              </div>
+            </div>
+            <div class="chart-body">
+              <canvas id="chart-car-performance"></canvas>
+            </div>
+          </div>
+
+          <!-- Right Chart: Customer Source -->
+          <div class="glass-card chart-card">
+            <div class="chart-header">
+              <div class="chart-title">
+                <i class="fas fa-pie-chart" style="color: var(--accent-gold);"></i> Tỷ Lệ Nguồn Khách Hàng
+              </div>
+            </div>
+            <div class="chart-body">
+              <canvas id="chart-customer-source"></canvas>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Fleet Performance Detail Table -->
+        <div class="glass-card" style="margin-top: 1.5rem;">
+          <h3 class="chart-title" style="margin-bottom: 1rem;">
+            <i class="fas fa-trophy" style="color: var(--accent-gold);"></i> Xếp Hạng Doanh Thu Thực Thu Từng Xe Máy
+          </h3>
+          <div class="data-table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Tên Xe & Biển Số</th>
+                  <th style="text-align: center;">Chuyến Đã Trả Xe</th>
+                  <th style="text-align: center;">Tổng Lượt Đặt</th>
+                  <th style="text-align: right;">Doanh Thu CỘNG DỒN</th>
+                  <th style="text-align: right;">Tổng Giá Trị Thuê</th>
+                </tr>
+              </thead>
+              <tbody id="table-fleet-perf-tbody">
+                <!-- Rendered via js/reports.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+
+      <!-- VIEW 4: FLEET MANAGEMENT VIEW -->
+      <section class="view-section" id="view-fleet">
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+          <div>
+            <h2 style="font-size: 1.25rem; font-weight: 700;">Danh Sách Xe Motorbike For Rent</h2>
+            <p style="font-size: 0.85rem; color: var(--text-muted);">Quản lý danh sách xe máy cho thuê và thiết lập
+              giá thuê theo ngày.</p>
+          </div>
+          <button class="btn btn-primary" onclick="window.MocCarFleet.openModal()">
+            <i class="fas fa-plus"></i> Thêm Xe Máy Mới
+          </button>
+        </div>
+
+        <div class="fleet-grid" id="fleet-grid-container">
+          <!-- Rendered via js/fleet.js -->
+        </div>
+
+      </section>
+
+    </main>
+  </div>
+
+
+  <!-- ==========================================================================
+       MODAL 1: FORM TẠO & CHỈNH SỬA ĐƠN CHO THUÊ
+       ========================================================================== -->
+  <div class="modal-backdrop" id="modal-booking">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-booking-title">
+          <i class="fas fa-plus-circle"></i> Tạo Đơn Cho Thuê Xe Máy Mới
+        </div>
+        <button class="modal-close" data-dismiss="modal">&times;</button>
+      </div>
+
+      <form id="booking-form">
+        <div class="modal-body">
+          <div class="form-grid">
+
+            <!-- Thông tin xe -->
+            <div class="form-group full-width">
+              <label class="form-label">Chọn Xe Máy Cho Thuê <span class="req">*</span></label>
+              <select class="form-select" id="booking-car-id" required>
+                <option value="">-- Chọn xe --</option>
+              </select>
+            </div>
+
+            <!-- Giá tiền thuê -->
+            <div class="form-group">
+              <label class="form-label">Giá Tiền Thuê Xe Máy (VNĐ) <span class="req">*</span></label>
+              <input type="text" inputmode="numeric" class="form-input currency-input" id="booking-rental-price"
+                placeholder="150.000" required>
+              <div class="form-hint highlight" id="booking-duration-badge">Tự động tính theo thời gian thuê</div>
+            </div>
+
+            <!-- Trạng thái đơn -->
+            <div class="form-group">
+              <label class="form-label">Trạng Thái Đơn</label>
+              <select class="form-select" id="booking-status">
+                <option value="Đã Đặt">Đã Đặt (Chờ nhận xe)</option>
+                <option value="Đang Thuê">Đang Thuê (Đã giao xe)</option>
+                <option value="Đã Trả">Đã Trả (Cộng Doanh Thu & Hoàn Cọc)</option>
+                <option value="Đã Hủy">Đã Hủy</option>
+              </select>
+            </div>
+
+            <!-- Ngày & Giờ Nhận Xe -->
+            <div class="form-group">
+              <label class="form-label">Ngày & Giờ Nhận Xe <span class="req">*</span></label>
+              <input type="datetime-local" class="form-input" id="booking-pickup" required>
+            </div>
+
+            <!-- Ngày & Giờ Trả Xe (Tự động +24h) -->
+            <div class="form-group">
+              <label class="form-label">Ngày & Giờ Trả Xe (Tự động +24h) <span class="req">*</span></label>
+              <input type="datetime-local" class="form-input" id="booking-return" required>
+              <div style="display: flex; gap: 0.35rem; margin-top: 0.35rem; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.75rem;"
+                  onclick="window.MocCarBooking.addHoursToReturn(24)">+ 24H (1 Ngày)</button>
+                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.75rem;"
+                  onclick="window.MocCarBooking.addHoursToReturn(48)">+ 48H (2 Ngày)</button>
+                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.75rem;"
+                  onclick="window.MocCarBooking.addHoursToReturn(72)">+ 72H (3 Ngày)</button>
+              </div>
+            </div>
+
+            <!-- Thông tin khách thuê: Họ tên -->
+            <div class="form-group">
+              <label class="form-label">Họ và Tên Khách Hàng <span class="req">*</span></label>
+              <input type="text" class="form-input" id="booking-customer-name" placeholder="Nguyễn Văn A" required>
+            </div>
+
+            <!-- Số điện thoại (Không bắt buộc) -->
+            <div class="form-group">
+              <label class="form-label">Số Điện Thoại (Không bắt buộc)</label>
+              <input type="tel" class="form-input" id="booking-customer-phone" placeholder="0908 123 456">
+            </div>
+
+            <!-- Thêm Ảnh Giấy Tờ (Hỗ trợ Chụp Ảnh Camera Điện Thoại & Thư Viện) -->
+            <div class="form-group full-width">
+              <label class="form-label"><i class="fas fa-camera"></i> Ảnh Đính Kèm (Giấy tờ, Hợp đồng, Xe cọc)</label>
+
+              <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                <button type="button" class="btn btn-primary btn-sm"
+                  onclick="document.getElementById('booking-id-camera-input').click()">
+                  <i class="fas fa-camera"></i> Chụp Ảnh Trực Tiếp bằng Camera
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm"
+                  onclick="document.getElementById('booking-id-images-input').click()">
+                  <i class="fas fa-images"></i> Chọn Từ Thư Viện Ảnh
+                </button>
+              </div>
+
+              <!-- Input Chụp Ảnh từ Camera điện thoại -->
+              <input type="file" id="booking-id-camera-input" accept="image/*" capture="environment"
+                style="display: none;" onchange="window.MocCarBooking.handleImageUpload(event)">
+
+              <!-- Input Chọn từ thư viện file -->
+              <input type="file" id="booking-id-images-input" accept="image/*" multiple style="display: none;"
+                onchange="window.MocCarBooking.handleImageUpload(event)">
+
+              <div id="booking-id-images-preview"
+                style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;"></div>
+            </div>
+
+            <!-- Phương thức cọc: 3 lựa chọn -->
+            <div class="form-group">
+              <label class="form-label">Phương Thức Cọc</label>
+              <select class="form-select" id="booking-deposit-type">
+                <option value="Cọc tiền">Cọc tiền (Nhập số tiền cọc)</option>
+                <option value="Cọc giấy tờ">Cọc giấy tờ (Nhập tên giấy tờ)</option>
+                <option value="Không cọc">Không cọc gì cả</option>
+              </select>
+            </div>
+
+            <!-- Nhập số tiền nếu chọn Cọc tiền -->
+            <div class="form-group" id="deposit-amount-group">
+              <label class="form-label">Số Tiền Cọc (VNĐ)</label>
+              <input type="text" inputmode="numeric" class="form-input currency-input" id="booking-deposit-amount"
+                placeholder="500.000">
+            </div>
+
+            <!-- Nhập tên giấy tờ nếu chọn Cọc giấy tờ -->
+            <div class="form-group full-width" id="deposit-detail-group" style="display: none;">
+              <label class="form-label">Tên Giấy Tờ Cọc</label>
+              <input type="text" class="form-input" id="booking-deposit-detail"
+                placeholder="Ví dụ: CCCD gốc, Hộ chiếu, Cavet xe, GPLX...">
+            </div>
+
+            <!-- Nguồn khách -->
+            <div class="form-group">
+              <label class="form-label">Nguồn Khách Hàng</label>
+              <select class="form-select" id="booking-customer-source">
+                <option value="Facebook">Facebook Page / Ads</option>
+                <option value="Khách quen">Khách quen đặt lại</option>
+                <option value="Giới thiệu">Người quen giới thiệu</option>
+                <option value="TikTok">TikTok Video / Livestream</option>
+                <option value="Khách vãng lai">Khách vãng lai / Trực tiếp</option>
+                <option value="Google">Google Search / Map</option>
+              </select>
+            </div>
+
+            <!-- Ghi chú -->
+            <div class="form-group full-width">
+              <label class="form-label">Ghi Chú Đơn Thuê</label>
+              <textarea class="form-textarea" id="booking-note" rows="2"
+                placeholder="Ghi chú điểm giao xe, yêu cầu thêm của khách..."></textarea>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Hủy Bỏ</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Lưu Đơn Cho Thuê</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ==========================================================================
+       MODAL 2: XEM NHANH CHI TIẾT ĐƠN (QUICK VIEW)
+       ========================================================================== -->
+  <div class="modal-backdrop" id="modal-quick-view">
+    <div class="modal-content" style="max-width: 640px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fas fa-info-circle" style="color: var(--primary);"></i> Chi Tiết Đơn Thuê Xe Máy & Giấy Tờ
+        </div>
+        <button class="modal-close" data-dismiss="modal">&times;</button>
+      </div>
+      <div class="modal-body" id="quick-view-body">
+        <!-- Rendered dynamically from booking.js -->
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ==========================================================================
+       MODAL 3: XÁC NHẬN TRẢ XE & QUYẾT TOÁN HOÀN CỌC
+       ========================================================================== -->
+  <div class="modal-backdrop" id="modal-return-settlement" style="z-index: 250;">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fas fa-hand-holding-usd" style="color: var(--primary);"></i> Xác Nhận Trả Xe Máy & Quyết Toán Cọc
+        </div>
+        <button class="modal-close" data-dismiss="modal">&times;</button>
+      </div>
+      <form id="settlement-form">
+        <input type="hidden" id="settlement-rental-id">
+        <div class="modal-body">
+          <div class="glass-card" style="margin-bottom: 1rem; padding: 0.85rem;" id="settlement-summary-card">
+            <!-- Dynamic info summary -->
+          </div>
+
+          <div class="form-grid" style="grid-template-columns: 1fr;">
+
+            <div class="form-group">
+              <label class="form-label">Số Tiền Cọc Hoàn Trả Khách (VNĐ)</label>
+              <input type="text" inputmode="numeric" class="form-input currency-input" id="settlement-refund-amount"
+                placeholder="500.000" required>
+              <div class="form-hint">Mặc định bằng số tiền cọc đã nhận. Điều chỉnh nếu có hoàn bớt/trừ cọc.</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Số Tiền Phụ Thu / Khấu Trừ Thêm (VNĐ)</label>
+              <input type="text" inputmode="numeric" class="form-input currency-input" id="settlement-deduction-amount"
+                placeholder="0">
+              <div class="form-hint">Khấu trừ quá giờ, xăng xe, rửa xe... (Tiền này được cộng vào doanh thu).</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Lý Do Phụ Thu / Khấu Trừ (Nếu có)</label>
+              <input type="text" class="form-input" id="settlement-deduction-reason"
+                placeholder="Ví dụ: Phụ thu 2 giờ trễ, trả xe thiếu xăng...">
+            </div>
+
+            <div
+              style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--primary); padding: 0.85rem; border-radius: var(--radius-md); text-align: center;">
+              <div style="font-size: 0.85rem; color: var(--text-muted);">Tổng Doanh Thu CỘNG DỒN Đơn Này:</div>
+              <div style="font-size: 1.35rem; font-weight: 800; color: var(--primary);" id="settlement-net-total">0 ₫
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Hủy Bỏ</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-check-circle"></i> Hoàn Tất Trả Xe & Cộng Doanh
+            Thu</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ==========================================================================
+       MODAL 4: THÊM / SỬA XE TRONG ĐỘI XE
+       ========================================================================== -->
+  <div class="modal-backdrop" id="modal-car">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-car-title">
+          <i class="fas fa-motorcycle"></i> Thêm Xe Máy Mới
+        </div>
+        <button class="modal-close" data-dismiss="modal">&times;</button>
+      </div>
+
+      <form id="car-form">
+        <div class="modal-body">
+          <div class="form-grid" style="grid-template-columns: 1fr;">
+
+            <div class="form-group">
+              <label class="form-label">Tên Xe Máy (Ví dụ: Honda Vision, Air Blade, Yamaha Grande, SH 150i...) <span class="req">*</span></label>
+              <input type="text" class="form-input" id="car-name" placeholder="Tên xe máy..." required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Biển Số Xe (BKS) <span class="req">*</span></label>
+              <input type="text" class="form-input" id="car-bks" placeholder="59P1-123.45" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Phân Loại Xe</label>
+              <input type="text" class="form-input" id="car-type" placeholder="Xe tay ga, Xe số, Xe côn tay, Phân khối lớn...">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Giá Thuê Mặc Định / Ngày (VNĐ) <span class="req">*</span></label>
+              <input type="text" inputmode="numeric" class="form-input currency-input" id="car-daily-rate"
+                placeholder="150.000" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Trạng Thái Xe</label>
+              <select class="form-select" id="car-status">
+                <option value="Hoạt động">Hoạt động (Sẵn sàng)</option>
+                <option value="Bảo dưỡng">Bảo dưỡng / Sửa chữa</option>
+              </select>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Hủy Bỏ</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Lưu Thông Tin Xe Máy</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- ==========================================================================
+       MODAL 5: IMAGE LIGHTBOX
+       ========================================================================== -->
+  <div class="modal-backdrop" id="modal-image-lightbox" style="z-index: 300;">
+    <div style="position: relative; max-width: 90vw; max-height: 90vh;">
+      <button class="modal-close" onclick="document.getElementById('modal-image-lightbox').classList.remove('active')"
+        style="position: absolute; top: -40px; right: 0; color: #fff; font-size: 2rem;">&times;</button>
+      <img id="lightbox-img-src" src="" alt="Ảnh giấy tờ"
+        style="max-width: 90vw; max-height: 85vh; border-radius: var(--radius-md); border: 2px solid var(--primary); box-shadow: var(--shadow-md);">
+    </div>
+  </div>
+
+
+  <!-- ==========================================================================
+       MODAL 6: CLOUD & MULTI-DEVICE DATA SYNC
+       ========================================================================== -->
+  <div class="modal-backdrop" id="modal-sync">
+    <div class="modal-content" style="max-width: 650px;">
+      <div class="modal-header">
+        <h2 class="modal-title"><i class="fas fa-cloud" style="color:var(--primary);"></i> Quản Lý Lưu Trữ & Đồng Bộ Dữ
+          Liệu</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1.25rem;">
+
+        <!-- Tab Local Sync Status -->
+        <div class="sync-info-box"
+          style="background: rgba(30, 41, 59, 0.5); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <span style="font-weight: 600; color: var(--text-main);"><i class="fas fa-desktop"
+                style="color:var(--success);"></i> Đồng Bộ Thời Gian Thực Giữa Các Tab:</span>
+            <span class="badge badge-done"><i class="fas fa-check"></i> Đang hoạt động</span>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+            Mọi thay đổi trên tab này sẽ lập tức tự động đồng bộ sang tất cả các tab khác đang mở trên thiết bị này mà
+            không cần bấm F5.
+          </p>
+        </div>
+
+        <!-- Cross-Device Cloud Sync Section -->
+        <div
+          style="background: var(--surface-card); padding: 1.25rem; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+          <h3
+            style="font-size: 1rem; margin-bottom: 0.75rem; color: var(--text-main); display: flex; align-items: center; gap: 0.5rem;">
+            <i class="fas fa-globe" style="color:var(--primary);"></i> Đồng Bộ Đám Mây Giữa Nhiều Thiết Bị
+          </h3>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label style="font-weight: 600; margin-bottom: 0.4rem; display: block;">Mã Đồng Bộ Cá Nhân (Sync
+              Key):</label>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="text" id="sync-key-input" class="form-control" placeholder="VD: MOTORBIKE-8899"
+                style="font-weight:700; letter-spacing:1px; text-transform:uppercase;">
+              <button class="btn btn-secondary" onclick="window.MocCarApp.saveSyncKeyInput()"><i
+                  class="fas fa-save"></i> Lưu Mã</button>
+              <button class="btn btn-outline" onclick="window.MocCarApp.generateNewSyncKey()"
+                title="Tạo mã ngẫu nhiên"><i class="fas fa-magic"></i> Tạo Mã</button>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.35rem;">
+              <i class="fas fa-check-circle" style="color: var(--success);"></i> Web đã được bật <strong>tự động đồng bộ
+                liên tục</strong>. Mọi điện thoại & máy tính mở trang đều tự động cập nhật dữ liệu chung mà không cần
+              nhập mã. Bạn có thể đổi mã nếu muốn dùng kênh riêng.
+            </div>
+          </div>
+
+          <div
+            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; background: rgba(255,255,255,0.03); padding: 0.75rem 1rem; border-radius: var(--radius-sm);">
+            <div>
+              <div style="font-weight: 600; font-size: 0.9rem;">Tự động Đồng bộ Cloud (Auto-Sync)</div>
+              <div style="font-size: 0.8rem; color: var(--text-muted);">Tự động đẩy/tải dữ liệu khi có thay đổi</div>
+            </div>
+            <label class="switch" style="position: relative; display: inline-block; width: 46px; height: 24px;">
+              <input type="checkbox" id="auto-sync-toggle" onchange="window.MocCarApp.toggleAutoSyncSetting(event)"
+                style="opacity: 0; width: 0; height: 0;">
+              <span class="slider round"
+                style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #334155; transition: .3s; border-radius: 24px;"></span>
+            </label>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button id="btn-push-cloud" class="btn btn-primary" style="flex:1; justify-content: center;"
+              onclick="window.MocCarApp.pushCloudData()">
+              <i class="fas fa-cloud-upload-alt"></i> Tải Lên Cloud (Push)
+            </button>
+            <button id="btn-pull-cloud" class="btn btn-secondary" style="flex:1; justify-content: center;"
+              onclick="window.MocCarApp.pullCloudData()">
+              <i class="fas fa-cloud-download-alt"></i> Tải Về Từ Cloud (Pull)
+            </button>
+          </div>
+          <div id="sync-last-time"
+            style="font-size: 0.8rem; color: var(--text-muted); text-align: center; margin-top: 0.5rem;"></div>
+        </div>
+
+        <!-- Quick Share & QR Code -->
+        <div
+          style="background: var(--surface-card); padding: 1.25rem; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+          <h3
+            style="font-size: 1rem; margin-bottom: 0.75rem; color: var(--text-main); display: flex; align-items: center; gap: 0.5rem;">
+            <i class="fas fa-qrcode" style="color:var(--primary);"></i> Chia Sẻ Dữ Liệu Nhanh Qua Mã QR / Chuỗi Mã
+          </h3>
+
+          <div style="display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap;">
+            <div id="sync-qr-container"
+              style="text-align: center; background: #fff; padding: 0.5rem; border-radius: var(--radius-sm);">
+              <img id="sync-qr-image" src="" alt="Mã QR Đồng bộ" style="width: 140px; height: 140px; display: block;">
+            </div>
+            <div style="flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 0.5rem;">
+              <button class="btn btn-outline btn-sm" onclick="window.MocCarApp.copySyncKeyToClipboard()">
+                <i class="fas fa-copy"></i> Sao chép Mã Sync Key
+              </button>
+              <button class="btn btn-outline btn-sm" onclick="window.MocCarApp.copyQuickCodeToClipboard()">
+                <i class="fas fa-code"></i> Sao chép Chuỗi Dữ Liệu Nhanh
+              </button>
+              <div style="margin-top: 0.25rem;">
+                <textarea id="quick-sync-code-input" class="form-control" rows="2"
+                  placeholder="Dán Chuỗi Dữ Liệu Nhanh tại đây..." style="font-size:0.8rem;"></textarea>
+                <button class="btn btn-secondary btn-sm"
+                  style="width: 100%; margin-top: 0.4rem; justify-content: center;"
+                  onclick="window.MocCarApp.importQuickCodeFromInput()">
+                  <i class="fas fa-file-import"></i> Nhập Dữ Liệu Từ Chuỗi
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-dismiss="modal">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Tích hợp Firebase Firestore CDN -->
+  <script type="module">
+    // 1. Import chuẩn CDN cho web
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+    import {
+      getFirestore,
+      doc,
+      setDoc,
+      onSnapshot
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    // 2. Thông số Firebase Config của bạn
+    const firebaseConfig = {
+      apiKey: "AIzaSyCbUtzGUHCJhruKzr_2qlKxRH0Fsg4UJm0",
+      authDomain: "rent-motorbike-8db0a.firebaseapp.com",
+      projectId: "rent-motorbike-8db0a",
+      storageBucket: "rent-motorbike-8db0a.firebasestorage.app",
+      messagingSenderId: "933828579186",
+      appId: "1:933828579186:web:9f51ddd963efbe03fe17eb",
+      measurementId: "G-SZ7CS3T0BB"
+    };
+
+    // 3. Khởi tạo Firebase & Firestore
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const db = getFirestore(app);
+
+    // Xuất ra window để dùng ở các file JS khác trong project Motorbike For Rent (như js/sync.js, js/store.js)
+    window.db = db;
+    window.doc = doc;
+    window.setDoc = setDoc;
+    window.onSnapshot = onSnapshot;
+
+    console.log("MOTORBIKE FOR RENT: Kết nối Firebase thành công!");
+  </script>
+
+  <!-- JS Application Modules -->
+  <script src="js/store.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/booking.js"></script>
+  <script src="js/calendar.js"></script>
+  <script src="js/reports.js"></script>
+  <script src="js/fleet.js"></script>
+  <script src="js/app.js"></script>
+</body>
+
+</html>
