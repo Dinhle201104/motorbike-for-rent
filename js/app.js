@@ -230,7 +230,7 @@ window.MocCarApp = {
     }
   },
 
-  showToast(message, type = 'success') {
+  showToast(message, type = 'success', duration = 3500) {
     let container = document.querySelector('.toast-container');
     if (!container) {
       container = document.createElement('div');
@@ -242,11 +242,22 @@ window.MocCarApp = {
     toast.className = 'toast';
 
     let icon = 'fa-check-circle';
-    if (type === 'warning') icon = 'fa-exclamation-triangle';
-    if (type === 'info') icon = 'fa-info-circle';
-    if (type === 'danger') icon = 'fa-times-circle';
+    let iconColor = 'var(--primary)';
+    if (type === 'warning') {
+      icon = 'fa-exclamation-triangle';
+      iconColor = 'var(--accent-gold)';
+      toast.style.borderLeftColor = 'var(--accent-gold)';
+    } else if (type === 'info') {
+      icon = 'fa-info-circle';
+      iconColor = 'var(--accent-blue)';
+      toast.style.borderLeftColor = 'var(--accent-blue)';
+    } else if (type === 'danger') {
+      icon = 'fa-times-circle';
+      iconColor = '#ef4444';
+      toast.style.borderLeftColor = '#ef4444';
+    }
 
-    toast.innerHTML = `<i class="fas ${icon}" style="font-size: 1.1rem; color: var(--primary);"></i> <span>${message}</span>`;
+    toast.innerHTML = `<i class="fas ${icon}" style="font-size: 1.15rem; color: ${iconColor}; flex-shrink: 0;"></i> <span style="line-height: 1.4;">${message}</span>`;
     container.appendChild(toast);
 
     setTimeout(() => {
@@ -254,7 +265,7 @@ window.MocCarApp = {
       toast.style.transform = 'translateX(100%)';
       toast.style.transition = 'all 0.3s ease';
       setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, duration);
   },
 
   exportDataBackup() {

@@ -18,15 +18,29 @@ window.MocCarBooking = {
     const depositTypeSelect = document.getElementById('booking-deposit-type');
 
     if (carSelect) {
-      carSelect.addEventListener('change', (e) => this.onCarSelected(e.target.value));
+      carSelect.addEventListener('change', (e) => {
+        this.onCarSelected(e.target.value);
+        this.validateAndCheckConflict();
+      });
     }
 
     if (pickupInput) {
-      pickupInput.addEventListener('change', () => this.onPickupDateChanged());
+      pickupInput.addEventListener('change', () => {
+        this.onPickupDateChanged();
+        this.validateAndCheckConflict();
+      });
     }
 
     if (returnInput) {
-      returnInput.addEventListener('change', () => this.calculateTotalEstimate());
+      returnInput.addEventListener('change', () => {
+        this.calculateTotalEstimate();
+        this.validateAndCheckConflict();
+      });
+    }
+
+    const statusSelect = document.getElementById('booking-status');
+    if (statusSelect) {
+      statusSelect.addEventListener('change', () => this.validateAndCheckConflict());
     }
 
     if (depositTypeSelect) {
@@ -78,10 +92,27 @@ window.MocCarBooking = {
       return;
     }
 
+    const rentals = window.MocCarStore.getRentals();
+    const now = new Date();
+
     cars.forEach(car => {
+      // Kiểm tra xem xe này hiện có đang được thuê không
+      const activeRental = rentals.find(r => r.carId === car.id && r.status === 'Đang Thuê');
+      let statusTag = '';
+      if (activeRental) {
+        const retDate = new Date(activeRental.returnDate);
+        const diffMs = retDate.getTime() - now.getTime();
+        if (diffMs > 0) {
+          const totalHours = Math.round((diffMs / (1000 * 60 * 60)) * 10) / 10;
+          statusTag = ` ⚠️ [Đang có người thuê - còn ~${totalHours}h]`;
+        } else {
+          statusTag = ` ⚠️ [Đang có người thuê - quá hạn trả]`;
+        }
+      }
+
       const opt = document.createElement('option');
       opt.value = car.id;
-      opt.textContent = `${car.name} (${car.bks}) - ${this.formatMoney(car.dailyRate)}/ngày`;
+      opt.textContent = `${car.name} (${car.bks})${statusTag} - ${this.formatMoney(car.dailyRate)}/ngày`;
       carSelect.appendChild(opt);
     });
   },
@@ -124,6 +155,7 @@ window.MocCarBooking = {
     returnInput.value = this.formatLocalISO(newReturn);
 
     this.calculateTotalEstimate();
+    this.validateAndCheckConflict();
   },
 
   calculateTotalEstimate() {
@@ -184,6 +216,188 @@ window.MocCarBooking = {
 
   toggleDepositDetailField(depositType) {
     this.toggleDepositFields(depositType);
+  },
+
+  // --- VEHICLE SCHEDULE CONFLICT & ACTIVE RENTAL CHECKER ---
+  checkVehicleConflict(carId, pickupDateStr, returnDateStr, excludeRentalId = null) {
+    if (!carId || !pickupDateStr || !returnDateStr) return null;
+
+    const newStart = new Date(pickupDateStr);
+    const newEnd = new Date(returnDateStr);
+    if (isNaN(newStart.getTime()) || isNaN(newEnd.getTime())) return null;
+
+    const rentals = window.MocCarStore.getRentals();
+    const now = new Date();
+
+    // Lọc các đơn đang hoạt động (không bị hủy hoặc đã trả) của xe này
+    const candidates = rentals.filter(r => {
+      if (r.carId !== carId) return false;
+      if (excludeRentalId && r.id === excludeRentalId) return false;
+      if (r.status === 'Đã Hủy' || r.status === 'Đã Trả') return false;
+      return true;
+    });
+
+    const conflicting = [];
+
+    candidates.forEach(r => {
+      const existStart = new Date(r.pickupDate);
+      const existEnd = new Date(r.returnDate);
+      if (isNaN(existStart.getTime()) || isNaN(existEnd.getTime())) return;
+
+      const isOngoing = (r.status === 'Đang Thuê');
+
+      // 1. Trùng lịch trực tiếp (giao thoa giữa 2 khoảng thời gian: A < D && B > C)
+      const isOverlap = (newStart < existEnd && newEnd > existStart);
+
+      // 2. Xe đang có người thuê và thời điểm nhận xe mới diễn ra trước khi xe được trả
+      const isCurrentlyRentedConflict = isOngoing && (newStart < existEnd);
+
+      // 3. Xe đang có người thuê nhưng đã quá hạn trả mà chưa hoàn tất trả xe
+      const isOverdueConflict = isOngoing && (now >= existEnd) && (newStart <= now);
+
+      if (isOverlap || isCurrentlyRentedConflict || isOverdueConflict) {
+        conflicting.push({
+          rental: r,
+          existStart,
+          existEnd,
+          isOngoing,
+          isOverdue: isOngoing && (now >= existEnd)
+        });
+      }
+    });
+
+    if (conflicting.length === 0) return null;
+
+    // Ưu tiên đơn đang thuê trước, sau đó tới đơn có thời gian trả sớm nhất
+    conflicting.sort((a, b) => {
+      if (a.isOngoing && !b.isOngoing) return -1;
+      if (!a.isOngoing && b.isOngoing) return 1;
+      return a.existEnd - b.existEnd;
+    });
+
+    const primary = conflicting[0];
+    const r = primary.rental;
+    const existEnd = primary.existEnd;
+    const diffMs = existEnd.getTime() - now.getTime();
+
+    // Tính chính xác số giờ và phút còn lại đến thời điểm trả xe
+    let timeRemainingStr = '';
+    let totalHours = 0;
+    let isOverdue = false;
+
+    if (diffMs > 0) {
+      const totalMinutes = Math.floor(diffMs / (1000 * 60));
+      const d = Math.floor(totalMinutes / (60 * 24));
+      const h = Math.floor((totalMinutes % (60 * 24)) / 60);
+      const m = totalMinutes % 60;
+      totalHours = Math.round((diffMs / (1000 * 60 * 60)) * 10) / 10;
+
+      let parts = [];
+      if (d > 0) parts.push(`${d} ngày`);
+      if (h > 0 || d > 0) parts.push(`${h} giờ`);
+      parts.push(`${m} phút`);
+      timeRemainingStr = `${parts.join(' ')} (khoảng ${totalHours} giờ)`;
+    } else {
+      isOverdue = true;
+      const overdueMs = Math.abs(diffMs);
+      const totalMinutes = Math.floor(overdueMs / (1000 * 60));
+      const d = Math.floor(totalMinutes / (60 * 24));
+      const h = Math.floor((totalMinutes % (60 * 24)) / 60);
+      const m = totalMinutes % 60;
+      totalHours = Math.round((overdueMs / (1000 * 60 * 60)) * 10) / 10;
+
+      let parts = [];
+      if (d > 0) parts.push(`${d} ngày`);
+      if (h > 0 || d > 0) parts.push(`${h} giờ`);
+      parts.push(`${m} phút`);
+      timeRemainingStr = `Đã quá hạn trả ${parts.join(' ')} (quá ${totalHours} giờ)`;
+    }
+
+    const returnFmt = this.formatDateTimeWithDayOfWeek(r.returnDate);
+    const pickupFmt = this.formatDateTimeWithDayOfWeek(r.pickupDate);
+    const car = window.MocCarStore.getCarById(carId);
+
+    return {
+      conflicts: conflicting,
+      primaryConflict: primary,
+      carName: car ? car.name : (r.carName || 'Xe máy'),
+      bks: car ? car.bks : (r.bks || ''),
+      customerName: r.customerName,
+      customerPhone: r.customerPhone,
+      status: r.status,
+      returnDate: r.returnDate,
+      returnFmt,
+      pickupFmt,
+      timeRemainingStr,
+      totalHours,
+      isOverdue,
+      isOngoing: primary.isOngoing
+    };
+  },
+
+  renderConflictAlert(conflict) {
+    const alertBox = document.getElementById('booking-conflict-alert');
+    if (!alertBox) return;
+
+    if (!conflict) {
+      alertBox.style.display = 'none';
+      alertBox.innerHTML = '';
+      return;
+    }
+
+    const titleText = conflict.isOngoing
+      ? (conflict.isOverdue
+          ? 'CẢNH BÁO: XE ĐANG CÓ NGƯỜI THUÊ (ĐÃ QUÁ HẠN TRẢ XE)'
+          : 'CẢNH BÁO: XE ĐANG CÓ NGƯỜI THUÊ CHƯA ĐẾN GIỜ TRẢ')
+      : 'CẢNH BÁO: TRÙNG LỊCH VỚI ĐƠN ĐÃ ĐẶT TRƯỚC';
+
+    const timeLabel = conflict.isOverdue
+      ? 'Thời gian quá hạn trả xe:'
+      : 'Số giờ còn lại đến khi xe được trả:';
+
+    alertBox.style.display = 'block';
+    alertBox.innerHTML = `
+      <div style="background: rgba(239, 68, 68, 0.12); border: 2px solid #ef4444; border-radius: var(--radius-md); padding: 0.9rem 1rem; color: #f8fafc; margin-top: 0.35rem; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.2);">
+        <div style="display: flex; align-items: center; gap: 0.5rem; color: #f87171; font-weight: 800; font-size: 0.95rem; margin-bottom: 0.5rem;">
+          <i class="fas fa-exclamation-triangle" style="font-size: 1.2rem; color: #f87171;"></i>
+          <span>${titleText}</span>
+        </div>
+        
+        <div style="background: rgba(15, 23, 42, 0.65); border-left: 4px solid #f59e0b; padding: 0.6rem 0.85rem; border-radius: 4px; margin: 0.5rem 0;">
+          <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">${timeLabel}</div>
+          <div style="font-size: 1.25rem; font-weight: 800; color: #fbbf24; margin: 3px 0;">
+            <i class="fas fa-hourglass-half"></i> ${conflict.timeRemainingStr}
+          </div>
+          <div style="font-size: 0.85rem; color: #cbd5e1;">
+            Dự kiến trả xe lúc: <strong style="color: #38bdf8;">${conflict.returnFmt}</strong>
+          </div>
+        </div>
+
+        <div style="font-size: 0.83rem; color: #cbd5e1; line-height: 1.6; margin-top: 0.4rem;">
+          <div><i class="fas fa-user-clock"></i> Khách đang giữ/đặt xe: <strong style="color:#f8fafc;">${this.escapeHtml(conflict.customerName)}</strong> ${conflict.customerPhone ? `(${this.escapeHtml(conflict.customerPhone)})` : ''} - Trạng thái: <span class="badge ${this.getStatusBadgeClass(conflict.status)}">${conflict.status}</span></div>
+          <div><i class="fas fa-calendar-alt"></i> Khung giờ trùng: <strong>${conflict.pickupFmt}</strong> ➔ <strong>${conflict.returnFmt}</strong></div>
+        </div>
+
+        <div style="margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px dashed rgba(239, 68, 68, 0.4); font-size: 0.82rem; color: #fca5a5; font-weight: 600;">
+          <i class="fas fa-ban"></i> Vui lòng chọn xe máy khác hoặc dời thời gian nhận xe sau <strong>${conflict.returnFmt}</strong>!
+        </div>
+      </div>
+    `;
+  },
+
+  validateAndCheckConflict() {
+    const carId = document.getElementById('booking-car-id')?.value;
+    const pickupDate = document.getElementById('booking-pickup')?.value;
+    const returnDate = document.getElementById('booking-return')?.value;
+
+    if (!carId || !pickupDate || !returnDate) {
+      this.renderConflictAlert(null);
+      return null;
+    }
+
+    const conflict = this.checkVehicleConflict(carId, pickupDate, returnDate, this.currentEditingId);
+    this.renderConflictAlert(conflict);
+    return conflict;
   },
 
   // DOCUMENT IMAGE UPLOAD & CANVAS COMPRESSION HANDLER
@@ -331,6 +545,7 @@ window.MocCarBooking = {
     }
 
     if (window.MocCarUtils) window.MocCarUtils.attachCurrencyFormatters();
+    this.validateAndCheckConflict();
     modal.classList.add('active');
   },
 
@@ -339,6 +554,7 @@ window.MocCarBooking = {
     if (modal) modal.classList.remove('active');
     this.currentEditingId = null;
     this.currentUploadedImages = [];
+    this.renderConflictAlert(null);
   },
 
   saveBooking() {
@@ -360,6 +576,28 @@ window.MocCarBooking = {
     if (!customerName || !pickupDate || !returnDate) {
       window.MocCarApp.showToast('Bắt buộc nhập Họ tên và Thời gian nhận/trả xe!', 'warning');
       return;
+    }
+
+    // KIỂM TRA TRÙNG LỊCH HOẶC XE ĐANG CÓ NGƯỜI THUÊ
+    if (status !== 'Đã Hủy' && status !== 'Đã Trả') {
+      const conflict = this.checkVehicleConflict(carId, pickupDate, returnDate, this.currentEditingId);
+      if (conflict) {
+        this.renderConflictAlert(conflict);
+
+        const toastMsg = conflict.isOngoing
+          ? (conflict.isOverdue
+              ? `Xe ${conflict.carName} (${conflict.bks}) đang có người thuê và đã quá hạn trả xe! Vui lòng quyết toán đơn trước.`
+              : `Xe ${conflict.carName} (${conflict.bks}) đang có người thuê! Còn lại ${conflict.timeRemainingStr} nữa mới đến giờ trả xe (${conflict.returnFmt}). Vui lòng chọn xe khác!`)
+          : `Xe ${conflict.carName} (${conflict.bks}) bị TRÙNG LỊCH với đơn đã đặt! Còn lại ${conflict.timeRemainingStr} nữa xe mới được trả (${conflict.returnFmt}). Vui lòng chọn xe khác!`;
+
+        window.MocCarApp.showToast(toastMsg, 'warning', 7000);
+
+        const alertBox = document.getElementById('booking-conflict-alert');
+        if (alertBox) {
+          alertBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return;
+      }
     }
 
     const depositType = document.getElementById('booking-deposit-type').value;
