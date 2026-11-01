@@ -122,10 +122,8 @@ window.MocCarBooking = {
     const car = window.MocCarStore.getCarById(carId);
     if (!car) return;
 
-    const rateInput = document.getElementById('booking-daily-rate');
-    if (rateInput) {
-      rateInput.value = car.dailyRate;
-    }
+    const priceInput = document.getElementById('booking-rental-price');
+    if (priceInput) priceInput.value = window.MocCarUtils.formatMoneyInput(car.dailyRate);
     this.calculateTotalEstimate();
   },
 
@@ -161,8 +159,6 @@ window.MocCarBooking = {
   calculateTotalEstimate() {
     const pickupInput = document.getElementById('booking-pickup');
     const returnInput = document.getElementById('booking-return');
-    const carSelect = document.getElementById('booking-car-id');
-    const priceInput = document.getElementById('booking-rental-price');
     const durationBadge = document.getElementById('booking-duration-badge');
 
     if (!pickupInput.value || !returnInput.value) return;
@@ -182,14 +178,23 @@ window.MocCarBooking = {
     if (durationBadge) {
       durationBadge.textContent = `Tổng thời gian thuê: ${daysDisplay} ngày (${Math.round(diffHours)} giờ)`;
     }
+  },
 
-    const carId = carSelect.value;
-    const car = window.MocCarStore.getCarById(carId);
-    if (car && priceInput) {
-      const daysForBilling = Math.max(1, Math.ceil(daysFloat));
-      const suggestedPrice = car.dailyRate * daysForBilling;
-      priceInput.value = window.MocCarUtils.formatMoneyInput(suggestedPrice);
-    }
+  isConfirmingPickup(rentalId, carId, pickupDate, returnDate, status) {
+    if (!rentalId || status !== 'Đang Thuê') return false;
+
+    const rental = window.MocCarStore.getRentalById(rentalId);
+    const sameDateTime = (first, second) => {
+      const firstTime = new Date(first).getTime();
+      const secondTime = new Date(second).getTime();
+      return !isNaN(firstTime) && firstTime === secondTime;
+    };
+
+    return !!rental &&
+      rental.status === 'Đã Đặt' &&
+      rental.carId === carId &&
+      sameDateTime(rental.pickupDate, pickupDate) &&
+      sameDateTime(rental.returnDate, returnDate);
   },
 
   toggleDepositFields(depositType) {
@@ -389,8 +394,14 @@ window.MocCarBooking = {
     const carId = document.getElementById('booking-car-id')?.value;
     const pickupDate = document.getElementById('booking-pickup')?.value;
     const returnDate = document.getElementById('booking-return')?.value;
+    const status = document.getElementById('booking-status')?.value;
 
     if (!carId || !pickupDate || !returnDate) {
+      this.renderConflictAlert(null);
+      return null;
+    }
+
+    if (this.isConfirmingPickup(this.currentEditingId, carId, pickupDate, returnDate, status)) {
       this.renderConflictAlert(null);
       return null;
     }
@@ -527,6 +538,7 @@ window.MocCarBooking = {
       const now = new Date();
       now.setMinutes(0, 0, 0);
       document.getElementById('booking-pickup').value = this.formatLocalISO(now);
+      document.getElementById('booking-status').value = 'Đang Thuê';
 
       this.onPickupDateChanged();
       this.renderImagePreviews();
@@ -539,6 +551,7 @@ window.MocCarBooking = {
       if (prefillData) {
         if (prefillData.carId) document.getElementById('booking-car-id').value = prefillData.carId;
         if (prefillData.pickupDate) document.getElementById('booking-pickup').value = prefillData.pickupDate;
+        if (prefillData.pickupDate && !prefillData.returnDate) this.onPickupDateChanged();
         if (prefillData.returnDate) document.getElementById('booking-return').value = prefillData.returnDate;
         this.onCarSelected(prefillData.carId);
       }
@@ -578,8 +591,16 @@ window.MocCarBooking = {
       return;
     }
 
+    const pickupTime = new Date(pickupDate);
+    const returnTime = new Date(returnDate);
+    if (isNaN(pickupTime.getTime()) || isNaN(returnTime.getTime()) || returnTime <= pickupTime) {
+      window.MocCarApp.showToast('Thời gian trả xe phải sau thời gian nhận xe!', 'warning');
+      return;
+    }
+
     // KIỂM TRA TRÙNG LỊCH HOẶC XE ĐANG CÓ NGƯỜI THUÊ
-    if (status !== 'Đã Hủy' && status !== 'Đã Trả') {
+    if (status !== 'Đã Hủy' && status !== 'Đã Trả' &&
+        !this.isConfirmingPickup(this.currentEditingId, carId, pickupDate, returnDate, status)) {
       const conflict = this.checkVehicleConflict(carId, pickupDate, returnDate, this.currentEditingId);
       if (conflict) {
         this.renderConflictAlert(conflict);
@@ -632,11 +653,17 @@ window.MocCarBooking = {
       note: document.getElementById('booking-note').value.trim()
     };
 
-    if (this.currentEditingId) {
-      window.MocCarStore.updateRental(this.currentEditingId, payload);
+    const editingId = this.currentEditingId;
+    let savedRental;
+    if (editingId) {
+      savedRental = window.MocCarStore.updateRental(editingId, payload);
+      if (!savedRental) {
+        window.MocCarApp.showToast('Không tìm thấy đơn thuê để cập nhật. Vui lòng tải lại danh sách và thử lại.', 'danger');
+        return;
+      }
       window.MocCarApp.showToast('Đã cập nhật đơn thuê xe thành công!', 'success');
     } else {
-      window.MocCarStore.addRental(payload);
+      savedRental = window.MocCarStore.addRental(payload);
       window.MocCarApp.showToast('Tạo đơn cho thuê xe mới thành công!', 'success');
     }
 
@@ -644,12 +671,8 @@ window.MocCarBooking = {
     window.MocCarApp.refreshAllViews();
 
     // If marked as 'Đã Trả' directly, trigger settlement popup to confirm deposit refunding!
-    if (status === 'Đã Trả') {
-      const savedRentals = window.MocCarStore.getRentals();
-      const targetId = this.currentEditingId || savedRentals[0]?.id;
-      if (targetId) {
-        this.openReturnSettlementModal(targetId);
-      }
+    if (status === 'Đã Trả' && savedRental) {
+      this.openReturnSettlementModal(savedRental.id);
     }
   },
 
@@ -970,7 +993,11 @@ window.MocCarBooking = {
 
   deleteBooking(id) {
     if (confirm('Bạn có chắc chắn muốn xóa đơn cho thuê xe này?')) {
-      window.MocCarStore.deleteRental(id);
+      const deleted = window.MocCarStore.deleteRental(id);
+      if (!deleted) {
+        window.MocCarApp.showToast('Không tìm thấy đơn thuê để xóa. Vui lòng tải lại danh sách và thử lại.', 'danger');
+        return;
+      }
       window.MocCarApp.showToast('Đã xóa đơn thuê thành công', 'info');
       window.MocCarApp.refreshAllViews();
     }

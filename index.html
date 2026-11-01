@@ -421,7 +421,7 @@
         <div class="modal-title" id="modal-booking-title">
           <i class="fas fa-plus-circle"></i> Tạo Đơn Cho Thuê Xe Máy Mới
         </div>
-        <button class="modal-close" data-dismiss="modal">&times;</button>
+        <button class="modal-close" data-dismiss="modal">&times;</button> 
       </div>
 
       <form id="booking-form">
@@ -441,10 +441,10 @@
 
             <!-- Giá tiền thuê -->
             <div class="form-group">
-              <label class="form-label">Giá Tiền Thuê Xe Máy (VNĐ) <span class="req">*</span></label>
+              <label class="form-label">Giá Tiền Thuê Xe Máy (VNĐ, có thể chỉnh sửa) <span class="req">*</span></label>
               <input type="text" inputmode="numeric" class="form-input currency-input" id="booking-rental-price"
                 placeholder="150.000" required>
-              <div class="form-hint highlight" id="booking-duration-badge">Tự động tính theo thời gian thuê</div>
+              <div class="form-hint highlight" id="booking-duration-badge">Giá mặc định theo giá thuê ngày của xe; có thể chỉnh sửa.</div>
             </div>
 
             <!-- Trạng thái đơn -->
@@ -452,7 +452,7 @@
               <label class="form-label">Trạng Thái Đơn</label>
               <select class="form-select" id="booking-status">
                 <option value="Đã Đặt">Đã Đặt (Chờ nhận xe)</option>
-                <option value="Đang Thuê">Đang Thuê (Đã giao xe)</option>
+                <option value="Đang Thuê" selected>Đã Nhận Xe / Đang Thuê</option>
                 <option value="Đã Trả">Đã Trả (Cộng Doanh Thu & Hoàn Cọc)</option>
                 <option value="Đã Hủy">Đã Hủy</option>
               </select>

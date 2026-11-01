@@ -259,8 +259,12 @@ class Store {
   }
 
   deleteRental(id) {
+    const exists = (this.rentals || []).some(r => r.id === id);
+    if (!exists) return false;
+
     this.rentals = (this.rentals || []).filter(r => r.id !== id);
     this.saveRentals();
+    return true;
   }
 
   // --- STATS & LIFETIME REVENUE CALCULATIONS ---
