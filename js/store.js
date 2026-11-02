@@ -59,6 +59,7 @@ class Store {
     let modified = false;
     (this.rentals || []).forEach(rent => {
       const price = Number(rent.rentalPrice);
+      if (rent.isVehicleSwitchContinuation && price === 0) return;
       if (isNaN(price) || price <= 0) {
         const car = this.getCarById(rent.carId);
         const dailyRate = car ? (Number(car.dailyRate) || 800000) : 800000;
@@ -153,13 +154,109 @@ class Store {
     return (this.rentals || []).find(r => r.id === id) || null;
   }
 
+  getAvailableCarsForPeriod(startDate, endDate, excludeRentalId = null) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) return [];
+
+    return (this.cars || []).filter(car => {
+      if (car.status !== 'Hoạt động') return false;
+      return !(this.rentals || []).some(rental => {
+        if (rental.carId !== car.id ||
+            rental.id === excludeRentalId ||
+            rental.status === 'Đã Hủy' ||
+            rental.status === 'Đã Trả') return false;
+
+        const rentalStart = new Date(rental.pickupDate);
+        const rentalEnd = new Date(rental.returnDate);
+        return !isNaN(rentalStart.getTime()) &&
+          !isNaN(rentalEnd.getTime()) &&
+          start < rentalEnd &&
+          end > rentalStart;
+      });
+    });
+  }
+
+  switchRentalVehicle(id, newCarId, transitionAt) {
+    const rental = this.getRentalById(id);
+    if (!rental || rental.status !== 'Đang Thuê') {
+      return { success: false, error: 'Chỉ có thể đổi xe cho đơn đang thuê.' };
+    }
+
+    const transitionTime = new Date(transitionAt);
+    const originalReturnTime = new Date(rental.returnDate);
+    const now = new Date();
+    if (isNaN(transitionTime.getTime()) ||
+        isNaN(originalReturnTime.getTime()) ||
+        transitionTime.getTime() > now.getTime() ||
+        originalReturnTime <= transitionTime) {
+      return { success: false, error: 'Đơn thuê không còn thời gian tiếp tục để chuyển sang xe khác.' };
+    }
+
+    if (newCarId === rental.carId) {
+      return { success: false, error: 'Vui lòng chọn xe khác với xe hiện tại.' };
+    }
+
+    const newCar = this.getCarById(newCarId);
+    if (!newCar || !this.getAvailableCarsForPeriod(transitionAt, rental.returnDate, id)
+      .some(car => car.id === newCarId)) {
+      return { success: false, error: 'Xe được chọn không còn trống trong toàn bộ thời gian thuê còn lại.' };
+    }
+
+    const transitionLabel = new Date().toLocaleString('vi-VN');
+    const closure = {
+      ...rental,
+      status: 'Đã Trả',
+      returnDate: transitionAt,
+      depositRefunded: 0,
+      depositDeduction: 0,
+      depositDeductionReason: '',
+      idImages: [],
+      completedAt: new Date().toISOString(),
+      note: [
+        rental.note,
+        `Đã chuyển từ xe ${rental.carName} (${rental.bks}) lúc ${transitionLabel}.`,
+        'Tiền cọc được chuyển tiếp, không hoàn tại thời điểm đổi xe.'
+      ]
+        .filter(Boolean)
+        .join('\n')
+    };
+    let continuationId = `rent-${Date.now()}`;
+    while ((this.rentals || []).some(item => item.id === continuationId)) {
+      continuationId = `rent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    const continuation = {
+      ...rental,
+      id: continuationId,
+      carId: newCar.id,
+      carName: newCar.name,
+      bks: newCar.bks,
+      rentalPrice: 0,
+      pickupDate: transitionAt,
+      status: 'Đang Thuê',
+      isVehicleSwitchContinuation: true,
+      completedAt: null,
+      createdAt: new Date().toISOString(),
+      note: [rental.note, `Tiếp tục đơn ${rental.id} trên xe ${newCar.name} (${newCar.bks}); không thu thêm phí.`]
+        .filter(Boolean)
+        .join('\n')
+    };
+
+    this.rentals = [continuation, ...this.rentals.map(item =>
+      item.id === rental.id ? closure : item
+    )];
+    this.saveRentals();
+    return { success: true, closedRental: closure, continuation };
+  }
+
   addRental(rentalData) {
     const car = this.getCarById(rentalData.carId);
     const depositAmt = Number(rentalData.depositAmount) || 0;
     
     // Calculate fallback price if rentalPrice is 0
     let rentalPrice = Number(rentalData.rentalPrice) || 0;
-    if (rentalPrice <= 0) {
+    if (rentalPrice <= 0 && !rentalData.isVehicleSwitchContinuation) {
       const dailyRate = car ? (Number(car.dailyRate) || 800000) : 800000;
       rentalPrice = dailyRate;
     }
@@ -189,6 +286,7 @@ class Store {
       customerSource: rentalData.customerSource || 'Khách vãng lai',
       status: rentalData.status || 'Đã Đặt',
       note: rentalData.note || '',
+      isVehicleSwitchContinuation: rentalData.isVehicleSwitchContinuation === true,
       completedAt: isDone ? new Date().toISOString() : null,
       createdAt: new Date().toISOString()
     };
@@ -207,7 +305,10 @@ class Store {
       const isCompleting = (rentalData.status !== undefined ? rentalData.status : current.status) === 'Đã Trả';
       
       let rentalPrice = rentalData.rentalPrice !== undefined ? Number(rentalData.rentalPrice) : Number(current.rentalPrice);
-      if (isNaN(rentalPrice) || rentalPrice <= 0) {
+      const isFreeContinuation = (rentalData.isVehicleSwitchContinuation === true ||
+        (current.isVehicleSwitchContinuation && rentalData.isVehicleSwitchContinuation !== false)) &&
+        rentalPrice === 0;
+      if ((isNaN(rentalPrice) || rentalPrice <= 0) && !isFreeContinuation) {
         const dailyRate = car ? (Number(car.dailyRate) || 800000) : 800000;
         rentalPrice = dailyRate;
       }

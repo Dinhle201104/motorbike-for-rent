@@ -6,6 +6,7 @@
 window.MocCarBooking = {
   currentEditingId: null,
   currentUploadedImages: [],
+  currentSwitchRentalId: null,
 
   init() {
     this.bindEvents();
@@ -68,6 +69,14 @@ window.MocCarBooking = {
         inputDeduction.addEventListener('input', () => this.updateSettlementNetTotal());
       }
     }
+
+    const switchVehicleForm = document.getElementById('switch-vehicle-form');
+    if (switchVehicleForm) {
+      switchVehicleForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        this.submitVehicleSwitch();
+      });
+    }
   },
 
   formatLocalISO(date) {
@@ -78,6 +87,15 @@ window.MocCarBooking = {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${year}-${month}-${day}T${hours}:${minutes}`;
+  },
+
+  setPickupDateToCurrentTime(value) {
+    const selectedDate = new Date(value);
+    if (isNaN(selectedDate.getTime())) return value;
+
+    const now = new Date();
+    selectedDate.setHours(now.getHours(), now.getMinutes(), 0, 0);
+    return this.formatLocalISO(selectedDate);
   },
 
   populateCarDropdown() {
@@ -132,6 +150,9 @@ window.MocCarBooking = {
     const returnInput = document.getElementById('booking-return');
 
     if (!pickupInput.value) return;
+    if (!this.currentEditingId) {
+      pickupInput.value = this.setPickupDateToCurrentTime(pickupInput.value);
+    }
 
     const pickupTime = new Date(pickupInput.value);
     if (isNaN(pickupTime.getTime())) return;
@@ -536,7 +557,6 @@ window.MocCarBooking = {
       title.innerHTML = '<i class="fas fa-plus-circle"></i> Tạo Đơn Cho Thuê Mới';
 
       const now = new Date();
-      now.setMinutes(0, 0, 0);
       document.getElementById('booking-pickup').value = this.formatLocalISO(now);
       document.getElementById('booking-status').value = 'Đang Thuê';
 
@@ -595,6 +615,12 @@ window.MocCarBooking = {
     const returnTime = new Date(returnDate);
     if (isNaN(pickupTime.getTime()) || isNaN(returnTime.getTime()) || returnTime <= pickupTime) {
       window.MocCarApp.showToast('Thời gian trả xe phải sau thời gian nhận xe!', 'warning');
+      return;
+    }
+
+    if (!this.currentEditingId && pickupTime.getHours() !== new Date().getHours()) {
+      const currentHour = String(new Date().getHours()).padStart(2, '0');
+      window.MocCarApp.showToast(`Giờ nhận xe phải trùng với giờ hiện tại (${currentHour} giờ). Vui lòng chỉnh lại giờ nhận xe.`, 'warning');
       return;
     }
 
@@ -974,6 +1000,11 @@ window.MocCarBooking = {
         ${imagesHtml}
 
         <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.5rem;">
+          ${rent.status === 'Đang Thuê' ? `
+            <button class="btn btn-secondary" onclick="window.MocCarBooking.openVehicleSwitchModal('${rent.id}')">
+              <i class="fas fa-exchange-alt"></i> Đổi Xe
+            </button>
+          ` : ''}
           ${!isDone ? `
             <button class="btn btn-primary" onclick="window.MocCarBooking.openReturnSettlementModal('${rent.id}')">
               <i class="fas fa-hand-holding-usd"></i> Xác Nhận Trả Xe & Quyết Toán Cọc
@@ -989,6 +1020,66 @@ window.MocCarBooking = {
     `;
 
     modal.classList.add('active');
+  },
+
+  openVehicleSwitchModal(rentalId) {
+    const rental = window.MocCarStore.getRentalById(rentalId);
+    const modal = document.getElementById('modal-switch-vehicle');
+    const select = document.getElementById('switch-vehicle-car-id');
+    const details = document.getElementById('switch-vehicle-details');
+    if (!rental || rental.status !== 'Đang Thuê' || !modal || !select || !details) {
+      window.MocCarApp.showToast('Chỉ có thể đổi xe cho đơn đang thuê.', 'warning');
+      return;
+    }
+
+    const transitionAt = this.formatLocalISO(new Date());
+    const availableCars = window.MocCarStore.getAvailableCarsForPeriod(
+      transitionAt,
+      rental.returnDate,
+      rental.id
+    ).filter(car => car.id !== rental.carId);
+
+    if (availableCars.length === 0) {
+      window.MocCarApp.showToast('Không có xe trống trong toàn bộ thời gian thuê còn lại.', 'warning');
+      return;
+    }
+
+    this.currentSwitchRentalId = rental.id;
+    select.innerHTML = '<option value="">-- Chọn xe thay thế --</option>' +
+      availableCars.map(car =>
+        `<option value="${this.escapeHtml(car.id)}">${this.escapeHtml(car.name)} (${this.escapeHtml(car.bks)})</option>`
+      ).join('');
+    details.innerHTML = `
+      Xe hiện tại: <strong>${this.escapeHtml(rental.carName)} (${this.escapeHtml(rental.bks)})</strong><br>
+      Thời gian thuê còn lại đến <strong>${this.formatDateTimeWithDayOfWeek(rental.returnDate)}</strong>.<br>
+      Khi xác nhận, xe hiện tại được ghi nhận trả ngay; xe mới tiếp tục đơn đến giờ trả cũ. Không thu thêm tiền, tiền cọc được giữ cho đơn tiếp nối.
+    `;
+    modal.classList.add('active');
+  },
+
+  submitVehicleSwitch() {
+    const select = document.getElementById('switch-vehicle-car-id');
+    if (!this.currentSwitchRentalId || !select || !select.value) {
+      window.MocCarApp.showToast('Vui lòng chọn xe thay thế.', 'warning');
+      return;
+    }
+
+    const transitionAt = this.formatLocalISO(new Date());
+    const result = window.MocCarStore.switchRentalVehicle(
+      this.currentSwitchRentalId,
+      select.value,
+      transitionAt
+    );
+    if (!result.success) {
+      window.MocCarApp.showToast(result.error, 'warning');
+      return;
+    }
+
+    document.getElementById('modal-switch-vehicle').classList.remove('active');
+    document.getElementById('modal-quick-view')?.classList.remove('active');
+    this.currentSwitchRentalId = null;
+    window.MocCarApp.refreshAllViews();
+    window.MocCarApp.showToast('Đã trả xe cũ và chuyển thời gian thuê còn lại sang xe mới, không thu thêm phí.', 'success');
   },
 
   deleteBooking(id) {

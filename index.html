@@ -590,6 +590,34 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="modal-switch-vehicle" style="z-index: 260;">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="fas fa-exchange-alt" style="color: var(--primary);"></i> Đổi Xe Đang Thuê
+        </div>
+        <button class="modal-close" data-dismiss="modal">&times;</button>
+      </div>
+      <form id="switch-vehicle-form">
+        <div class="modal-body">
+          <div class="glass-card" id="switch-vehicle-details"
+            style="padding: 0.85rem; margin-bottom: 1rem; line-height: 1.7;"></div>
+          <div class="form-group">
+            <label class="form-label" for="switch-vehicle-car-id">Chọn xe thay thế <span class="req">*</span></label>
+            <select class="form-select" id="switch-vehicle-car-id" required>
+              <option value="">-- Chọn xe thay thế --</option>
+            </select>
+            <div class="form-hint">Chỉ hiển thị xe đang hoạt động và trống đến hết thời gian thuê còn lại.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Hủy</button>
+          <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Xác Nhận Đổi Xe</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
 
   <!-- ==========================================================================
        MODAL 3: XÁC NHẬN TRẢ XE & QUYẾT TOÁN HOÀN CỌC
